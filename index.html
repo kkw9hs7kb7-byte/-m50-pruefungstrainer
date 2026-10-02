@@ -128,6 +128,31 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
 .fallback-q{border:1px solid var(--line);border-radius:14px;background:#0f1821;margin:9px 0;overflow:hidden}
 .fallback-q summary{padding:14px 15px;cursor:pointer;line-height:1.45}
 .fallback-answer{padding:0 15px 15px;color:#d7e2ec;line-height:1.5}
+
+.auth-wrap{min-height:calc(100vh - 48px);display:grid;place-items:center;padding:28px 0 54px}
+.auth-card{width:min(470px,100%);border:1px solid var(--line);background:linear-gradient(180deg,var(--card),#111a24);border-radius:22px;box-shadow:var(--shadow);padding:clamp(20px,5vw,30px)}
+.auth-logo{width:58px;height:58px;display:grid;place-items:center;border-radius:18px;background:#17243a;border:1px solid #35527a;color:#b9d3ff;font-weight:950;letter-spacing:-.04em;margin-bottom:18px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#0d151e;border:1px solid var(--line);padding:5px;border-radius:14px;margin:18px 0}
+.auth-tab{border:0;border-radius:10px;background:transparent;color:var(--muted);padding:10px 12px;font-weight:850;cursor:pointer}
+.auth-tab.active{background:var(--card2);color:var(--text)}
+.field{display:grid;gap:7px;margin:13px 0}
+.field label{font-size:.84rem;color:var(--muted);font-weight:800}
+.field input{width:100%;border:1px solid var(--line);background:#0e1720;color:var(--text);border-radius:13px;padding:14px 15px;outline:none;font:inherit}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(120,169,255,.11)}
+.auth-check{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:.9rem;margin:14px 0 18px;cursor:pointer}
+.auth-check input{width:18px;height:18px;accent-color:var(--accent)}
+.auth-submit{width:100%}
+.auth-note{font-size:.82rem;color:var(--muted);line-height:1.5;margin:15px 0 0}
+.auth-msg{margin:12px 0 0;padding:11px 13px;border-radius:12px;font-size:.9rem;line-height:1.4}
+.auth-msg.bad{background:var(--bad-bg);border:1px solid rgba(225,132,132,.5);color:#ffe9e9}
+.auth-msg.ok{background:var(--ok-bg);border:1px solid rgba(104,197,150,.5);color:#e9fff3}
+.user-area{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0}
+.user-name{color:var(--muted);font-size:.82rem;font-weight:800;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logout-btn{border:1px solid var(--line);background:var(--card2);color:var(--text);border-radius:10px;padding:7px 9px;font-size:.78rem;font-weight:800;cursor:pointer}
+.top.auth-hidden{display:none}
+.welcome-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--muted)}
+.welcome-name{color:var(--text);font-weight:850}
+
 #app[hidden]{display:none!important}
 @media(max-width:820px){
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -147,13 +172,15 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   .actions{justify-content:stretch}
   .actions .btn{flex:1 1 145px}
   .brand{font-size:1.05rem}
+  .user-name{display:none}
+  .logout-btn{padding:7px 8px}
 }
 </style>
 </head>
 <body>
-<header class="top">
+<header class="top auth-hidden" id="topBar">
   <div class="shell top-inner">
-    <div class="brand-row"><div class="brand">M50 &amp; M53 Prüfungstrainer</div><span class="module-badge" id="headerModule">M50</span></div>
+    <div class="brand-row"><div class="brand">M50 &amp; M53 Prüfungstrainer</div><span class="module-badge" id="headerModule">M50</span><div class="user-area"><span class="user-name" id="headerUser"></span><button class="logout-btn" id="logoutBtn" type="button">Abmelden</button></div></div>
     <nav class="nav" aria-label="Hauptnavigation">
       <button class="nav-btn" data-go="home">Start</button>
       <button class="nav-btn" data-go="learn">Lernen</button>
@@ -322,7 +349,11 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   var app=document.getElementById("app");
   var fallback=document.getElementById("fallback");
   var headerModule=document.getElementById("headerModule");
+  var headerUser=document.getElementById("headerUser");
+  var topBar=document.getElementById("topBar");
+  var logoutBtn=document.getElementById("logoutBtn");
   var memoryStorage={};
+  var activeProfile=null;
   var DATA={M50:[],M53:[]};
 
   function storeGet(key,fallbackValue){
@@ -337,6 +368,68 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     try{window.localStorage.setItem(key,JSON.stringify(value));}
     catch(e){memoryStorage[key]=value;}
   }
+  function storeRemove(key){
+    try{window.localStorage.removeItem(key);}catch(e){delete memoryStorage[key];}
+  }
+  function sessionGet(key){
+    try{return window.sessionStorage.getItem(key);}catch(e){return null;}
+  }
+  function sessionSet(key,value){
+    try{window.sessionStorage.setItem(key,value);}catch(e){}
+  }
+  function sessionRemove(key){
+    try{window.sessionStorage.removeItem(key);}catch(e){}
+  }
+
+  var PROFILE_KEY="trainer_local_profile_v1";
+  var REMEMBER_KEY="trainer_auth_remember_v1";
+  var SESSION_KEY="trainer_auth_session_v1";
+
+  function profileStorageKey(base){
+    if(!activeProfile||!activeProfile.id)return base;
+    return "trainer_profile_"+activeProfile.id+"_"+base;
+  }
+  function profileGet(base,fallbackValue){return storeGet(profileStorageKey(base),fallbackValue);}
+  function profileSet(base,value){storeSet(profileStorageKey(base),value);}
+
+  function simpleHash(str){
+    var h1=2166136261>>>0,h2=2246822519>>>0,i,c;
+    for(i=0;i<str.length;i++){c=str.charCodeAt(i);h1=Math.imul(h1^c,16777619);h2=Math.imul(h2^c,3266489917);}
+    return ("00000000"+(h1>>>0).toString(16)).slice(-8)+("00000000"+(h2>>>0).toString(16)).slice(-8);
+  }
+  async function hashPassword(password){
+    try{
+      if(window.crypto&&window.crypto.subtle&&window.TextEncoder){
+        var data=new TextEncoder().encode(password),buf=await window.crypto.subtle.digest("SHA-256",data),arr=Array.from(new Uint8Array(buf));
+        return arr.map(function(b){return ("0"+b.toString(16)).slice(-2);}).join("");
+      }
+    }catch(e){}
+    return simpleHash(password);
+  }
+  function makeProfileId(){return Date.now().toString(36)+Math.random().toString(36).slice(2,9);}
+  function getLocalProfile(){
+    var p=storeGet(PROFILE_KEY,null);
+    return p&&p.id&&p.name&&p.passwordHash?p:null;
+  }
+  function setAuthSession(profile,remember){
+    sessionRemove(SESSION_KEY);storeRemove(REMEMBER_KEY);
+    if(remember)storeSet(REMEMBER_KEY,profile.id);else sessionSet(SESSION_KEY,profile.id);
+  }
+  function hasAuthSession(profile){
+    if(!profile)return false;
+    return storeGet(REMEMBER_KEY,null)===profile.id||sessionGet(SESSION_KEY)===profile.id;
+  }
+  function migrateLegacyData(){
+    var bases=["m50_history_v3","m50_errors_v3","m50_mastered_v3","m53_history_v1","m53_errors_v1","m53_mastered_v1","trainer_selected_module_v1"],i,base,legacy,target;
+    try{
+      for(i=0;i<bases.length;i++){
+        base=bases[i];target=profileStorageKey(base);
+        if(window.localStorage.getItem(target)!==null)continue;
+        legacy=window.localStorage.getItem(base);
+        if(legacy!==null)window.localStorage.setItem(target,legacy);
+      }
+    }catch(e){}
+  }
 
   var MODULES={
     M50:{label:"M50",count:75,keys:{history:"m50_history_v3",errors:"m50_errors_v3",mastered:"m50_mastered_v3"}},
@@ -345,12 +438,12 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   var SELECTED_MODULE_KEY="trainer_selected_module_v1";
 
   function initialModule(){
-    var m=storeGet(SELECTED_MODULE_KEY,"M50");
+    var m=profileGet(SELECTED_MODULE_KEY,"M50");
     return MODULES[m]?m:"M50";
   }
 
   var state={
-    module:initialModule(),
+    module:"M50",
     view:"home",
     exam:null,
     learn:null,
@@ -403,14 +496,14 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     catch(e){return iso;}
   }
   function history(module){
-    var h=storeGet(keys(module).history,[]);
+    var h=profileGet(keys(module).history,[]);
     return Array.isArray(h)?h:[];
   }
   function errorMap(module){
-    var e=storeGet(keys(module).errors,{});
+    var e=profileGet(keys(module).errors,{});
     return e&&typeof e==="object"&&!Array.isArray(e)?e:{};
   }
-  function saveErrors(e,module){storeSet(keys(module).errors,e);}
+  function saveErrors(e,module){profileSet(keys(module).errors,e);}
   function errorIds(module){
     module=module||state.module;
     var e=errorMap(module),out=[];
@@ -425,9 +518,9 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   }
   function masteredToday(module){
     module=module||state.module;
-    var x=storeGet(keys(module).mastered,{date:dateKey(),ids:[]});
+    var x=profileGet(keys(module).mastered,{date:dateKey(),ids:[]});
     if(!x||x.date!==dateKey()||!Array.isArray(x.ids)){
-      x={date:dateKey(),ids:[]};storeSet(keys(module).mastered,x);
+      x={date:dateKey(),ids:[]};profileSet(keys(module).mastered,x);
     }
     return x;
   }
@@ -435,7 +528,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     module=module||state.module;
     var x=masteredToday(module);
     if(x.ids.indexOf(id)<0)x.ids.push(id);
-    storeSet(keys(module).mastered,x);
+    profileSet(keys(module).mastered,x);
   }
   function stats(module){
     var h=history(module);
@@ -452,11 +545,12 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   }
   function syncHeader(){
     if(headerModule)headerModule.textContent=state.module;
+    if(headerUser)headerUser.textContent=activeProfile?activeProfile.name:"";
   }
   function setModule(module,goHome){
     if(!MODULES[module])return;
     state.module=module;
-    storeSet(SELECTED_MODULE_KEY,module);
+    profileSet(SELECTED_MODULE_KEY,module);
     state.exam=null;state.learn=null;state.errors=null;
     syncHeader();
     if(goHome!==false)renderHome();
@@ -500,12 +594,76 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     for(var i=0;i<b.length;i++)b[i].onclick=function(){setModule(this.getAttribute("data-module"),true);};
   }
 
+  function authMessage(msg,type){
+    var n=document.getElementById("authMsg");
+    if(!n)return;
+    if(!msg){n.innerHTML="";n.className="";return;}
+    n.className="auth-msg "+(type||"bad");n.textContent=msg;
+  }
+  function renderAuth(mode){
+    activeProfile=null;
+    state.exam=null;state.learn=null;state.errors=null;state.view="auth";
+    if(topBar)topBar.classList.add("auth-hidden");
+    setNav("");
+    var profile=getLocalProfile(),canRegister=!profile;
+    if(mode!=="register"||!canRegister)mode="login";
+    app.hidden=false;fallback.style.display="none";window.scrollTo(0,0);
+    app.innerHTML='<section class="auth-wrap"><div class="auth-card"><div class="auth-logo">M50<br>M53</div>'+ 
+      '<div class="kicker">Prüfungstrainer</div><h1 style="font-size:2.2rem">'+(mode==="register"?'Profil erstellen':'Anmelden')+'</h1>'+ 
+      '<p class="muted">'+(mode==="register"?'Erstelle einmal ein lokales Profil. Deine Lern- und Prüfungsdaten bleiben auf diesem Gerät gespeichert.':'Melde dich mit deinem lokalen Profil an, um mit deiner eigenen Statistik weiterzulernen.')+'</p>'+ 
+      (canRegister?'<div class="auth-tabs"><button class="auth-tab '+(mode==="login"?'active':'')+'" id="tabLogin" type="button">Anmelden</button><button class="auth-tab '+(mode==="register"?'active':'')+'" id="tabRegister" type="button">Registrieren</button></div>':'')+
+      '<form id="authForm" autocomplete="on"><div class="field"><label for="profileName">Profilname</label><input id="profileName" name="username" autocomplete="username" maxlength="40" required value="'+(profile?esc(profile.name):'')+'"></div>'+ 
+      '<div class="field"><label for="profilePassword">Passwort</label><input id="profilePassword" name="password" type="password" autocomplete="'+(mode==="register"?'new-password':'current-password')+'" required></div>'+ 
+      (mode==="register"?'<div class="field"><label for="profilePassword2">Passwort wiederholen</label><input id="profilePassword2" type="password" autocomplete="new-password" required></div>':'')+
+      '<label class="auth-check"><input id="rememberLogin" type="checkbox" checked> Anmeldedaten auf diesem Gerät merken</label>'+ 
+      '<button class="btn auth-submit" type="submit">'+(mode==="register"?'Profil erstellen':'Anmelden')+'</button><div id="authMsg"></div></form>'+ 
+      '<p class="auth-note">Hinweis: Dieses Profil ist bewusst nur lokal. Es wird nicht mit anderen Geräten synchronisiert und ist nicht für sensible Daten gedacht.</p>'+ 
+      (!canRegister?'<p class="auth-note">Auf diesem Gerät ist bereits ein Profil eingerichtet: <b>'+esc(profile.name)+'</b>.</p>':'')+
+      '</div></section>';
+    if(canRegister){
+      document.getElementById("tabLogin").onclick=function(){renderAuth("login");};
+      document.getElementById("tabRegister").onclick=function(){renderAuth("register");};
+    }
+    document.getElementById("authForm").onsubmit=async function(ev){
+      ev.preventDefault();authMessage("");
+      var name=document.getElementById("profileName").value.trim(),pw=document.getElementById("profilePassword").value,remember=document.getElementById("rememberLogin").checked;
+      if(name.length<2){authMessage("Bitte gib einen Profilnamen mit mindestens 2 Zeichen ein.");return;}
+      if(pw.length<3){authMessage("Bitte verwende ein Passwort mit mindestens 3 Zeichen.");return;}
+      if(mode==="register"){
+        var pw2=document.getElementById("profilePassword2").value;
+        if(pw!==pw2){authMessage("Die beiden Passwörter stimmen nicht überein.");return;}
+        var created={id:makeProfileId(),name:name,passwordHash:await hashPassword(pw),createdAt:new Date().toISOString()};
+        storeSet(PROFILE_KEY,created);activeProfile=created;migrateLegacyData();setAuthSession(created,remember);bootApp();
+      }else{
+        var existing=getLocalProfile();
+        if(!existing){renderAuth("register");return;}
+        if(existing.name.toLocaleLowerCase("de-DE")!==name.toLocaleLowerCase("de-DE")){authMessage("Profilname oder Passwort ist nicht korrekt.");return;}
+        var hash=await hashPassword(pw);
+        if(hash!==existing.passwordHash){authMessage("Profilname oder Passwort ist nicht korrekt.");return;}
+        activeProfile=existing;setAuthSession(existing,remember);bootApp();
+      }
+    };
+  }
+  function logout(){
+    storeRemove(REMEMBER_KEY);sessionRemove(SESSION_KEY);activeProfile=null;renderAuth("login");
+  }
+  function bootApp(){
+    if(!activeProfile)return renderAuth("login");
+    state.module=initialModule();state.exam=null;state.learn=null;state.errors=null;state.historyFilter=null;
+    if(topBar)topBar.classList.remove("auth-hidden");syncHeader();renderHome();
+  }
+  function initAuth(){
+    var p=getLocalProfile();
+    if(p&&hasAuthSession(p)){activeProfile=p;bootApp();}
+    else renderAuth(p?"login":"register");
+  }
+
   function renderHome(){
     show("home");
     var mod=state.module,s=stats(mod),ec=errorIds(mod).length,count=MODULES[mod].count;
     app.innerHTML=
       '<section class="hero"><div class="kicker">Offline · '+count+' Prüfungsfragen in '+mod+'</div>'+
-      '<h1>'+mod+' Prüfungstrainer</h1><p class="muted">Lernen, 8-Fragen-Prüfungen absolvieren und Fehler gezielt wiederholen.</p></section>'+
+      '<h1>'+mod+' Prüfungstrainer</h1><p class="muted">Lernen, 8-Fragen-Prüfungen absolvieren und Fehler gezielt wiederholen.</p><div class="welcome-line">Angemeldet als <span class="welcome-name">'+esc(activeProfile?activeProfile.name:"")+'</span> · Deine Statistik bleibt lokal auf diesem Gerät.</div></section>'+
       '<section class="module-section"><h3>Modul auswählen</h3><div class="module-switch">'+
         '<button class="module-btn '+(mod==="M50"?"active":"")+'" data-module="M50"><strong>M50</strong><span>75 Fragen · Munition / Flugkörper</span></button>'+
         '<button class="module-btn '+(mod==="M53"?"active":"")+'" data-module="M53"><strong>M53</strong><span>57 Fragen · Sensorik / Systeme / Feuerleitung</span></button>'+
@@ -571,7 +729,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     }
     var percent=right/8*100,h=history(module);
     h.push({date:new Date().toISOString(),right:right,total:8,percent:percent});
-    storeSet(keys(module).history,h);
+    profileSet(keys(module).history,h);
     ex.result={reviewed:reviewed,right:right,wrong:8-right,percent:percent};
     renderResult();
   }
@@ -747,13 +905,13 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     if(entries.length)document.getElementById("clearHistory").onclick=function(){
       var msg=filter==="ALL"?"Möchtest du wirklich alle gespeicherten M50- und M53-Prüfungsergebnisse löschen?":"Möchtest du wirklich alle gespeicherten "+filter+"-Prüfungsergebnisse löschen?";
       if(window.confirm(msg)){
-        if(filter==="ALL"){storeSet(keys("M50").history,[]);storeSet(keys("M53").history,[]);}
-        else storeSet(keys(filter).history,[]);
+        if(filter==="ALL"){profileSet(keys("M50").history,[]);profileSet(keys("M53").history,[]);}
+        else profileSet(keys(filter).history,[]);
         renderHistory();
       }
     };
     else document.getElementById("firstExam").onclick=function(){
-      if(filter==="M50"||filter==="M53"){state.module=filter;storeSet(SELECTED_MODULE_KEY,filter);syncHeader();}
+      if(filter==="M50"||filter==="M53"){state.module=filter;profileSet(SELECTED_MODULE_KEY,filter);syncHeader();}
       startExam();
     };
   }
@@ -772,9 +930,9 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     parseData();
     fallback.style.display="none";
     app.hidden=false;
-    syncHeader();
     bindNav();
-    renderHome();
+    if(logoutBtn)logoutBtn.onclick=logout;
+    initAuth();
   }catch(e){fatal(e);}
 })();
 </script>
