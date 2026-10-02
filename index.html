@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="M50/M53 Trainer">
 <title>M50 &amp; M53 Prüfungstrainer</title>
 <style>
@@ -32,7 +32,7 @@ button{touch-action:manipulation}
   position:sticky;top:0;z-index:20;background:rgba(11,17,24,.94);
   border-bottom:1px solid rgba(255,255,255,.07);backdrop-filter:blur(12px);
 }
-.top-inner{padding:14px 0 9px}
+.top-inner{padding:calc(14px + env(safe-area-inset-top, 0px)) 0 9px}
 .brand-row{display:flex;align-items:center;gap:9px;margin-bottom:8px;min-width:0}
 .brand{font-size:1.22rem;font-weight:850;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .module-badge{display:inline-flex;align-items:center;justify-content:center;min-width:46px;padding:6px 9px;border-radius:999px;background:#17243a;border:1px solid #35527a;color:#b9d3ff;font-size:.76rem;font-weight:900;letter-spacing:.05em}
@@ -436,6 +436,54 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     M53:{label:"M53",count:57,keys:{history:"m53_history_v1",errors:"m53_errors_v1",mastered:"m53_mastered_v1"}}
   };
   var SELECTED_MODULE_KEY="trainer_selected_module_v1";
+  var EXAM_SIZE=10;
+
+  function queueKey(module,mode){return "trainer_fair_queue_v1_"+module+"_"+mode;}
+  function lastLearnKey(module){return "trainer_fair_last_v1_"+module+"_learn";}
+  function validQuestionIds(module){
+    var qs=questions(module),out=[];
+    for(var i=0;i<qs.length;i++)out.push(qs[i].id);
+    return out;
+  }
+  function cleanQueue(module,queue){
+    var valid=validQuestionIds(module),seen={},out=[],i,id;
+    if(!Array.isArray(queue))return out;
+    for(i=0;i<queue.length;i++){
+      id=Number(queue[i]);
+      if(valid.indexOf(id)>=0&&!seen[id]){seen[id]=true;out.push(id);}
+    }
+    return out;
+  }
+  function freshCycle(module,avoidFirstIds){
+    var ids=shuffle(validQuestionIds(module)),avoid=avoidFirstIds||[],front=[],back=[],i;
+    for(i=0;i<ids.length;i++){
+      if(avoid.indexOf(ids[i])>=0)back.push(ids[i]);else front.push(ids[i]);
+    }
+    return front.concat(back);
+  }
+  function takeFairExamIds(module,count){
+    var key=queueKey(module,"exam"),bag=cleanQueue(module,profileGet(key,[])),out=[],id,guard=0;
+    while(out.length<count&&guard<5000){
+      guard++;
+      if(!bag.length)bag=freshCycle(module,out);
+      id=bag.shift();
+      if(out.indexOf(id)>=0){bag.push(id);continue;}
+      out.push(id);
+    }
+    profileSet(key,bag);
+    return out;
+  }
+  function takeFairLearnId(module){
+    var key=queueKey(module,"learn"),bag=cleanQueue(module,profileGet(key,[])),last=Number(profileGet(lastLearnKey(module),0)),id;
+    if(!bag.length){
+      bag=freshCycle(module,[]);
+      if(bag.length>1&&bag[0]===last){var t=bag[0];bag[0]=bag[1];bag[1]=t;}
+    }
+    id=bag.shift();
+    profileSet(key,bag);
+    profileSet(lastLearnKey(module),id);
+    return id;
+  }
 
   function initialModule(){
     var m=profileGet(SELECTED_MODULE_KEY,"M50");
@@ -663,7 +711,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     var mod=state.module,s=stats(mod),ec=errorIds(mod).length,count=MODULES[mod].count;
     app.innerHTML=
       '<section class="hero"><div class="kicker">Offline · '+count+' Prüfungsfragen in '+mod+'</div>'+
-      '<h1>'+mod+' Prüfungstrainer</h1><p class="muted">Lernen, 8-Fragen-Prüfungen absolvieren und Fehler gezielt wiederholen.</p><div class="welcome-line">Angemeldet als <span class="welcome-name">'+esc(activeProfile?activeProfile.name:"")+'</span> · Deine Statistik bleibt lokal auf diesem Gerät.</div></section>'+
+      '<h1>'+mod+' Prüfungstrainer</h1><p class="muted">Lernen, 10-Fragen-Prüfungen absolvieren und Fehler gezielt wiederholen.</p><div class="welcome-line">Angemeldet als <span class="welcome-name">'+esc(activeProfile?activeProfile.name:"")+'</span> · Deine Statistik bleibt lokal auf diesem Gerät.</div></section>'+
       '<section class="module-section"><h3>Modul auswählen</h3><div class="module-switch">'+
         '<button class="module-btn '+(mod==="M50"?"active":"")+'" data-module="M50"><strong>M50</strong><span>75 Fragen · Munition / Flugkörper</span></button>'+
         '<button class="module-btn '+(mod==="M53"?"active":"")+'" data-module="M53"><strong>M53</strong><span>57 Fragen · Sensorik / Systeme / Feuerleitung</span></button>'+
@@ -676,7 +724,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
         '<div class="stat"><div class="stat-l">Fehlerfragen</div><div class="stat-v">'+ec+'</div></div>'+
       '</section>'+
       '<section class="modes grid">'+
-        mode("📝","PRÜFUNGSMODUS","8 zufällige Fragen aus "+mod+". Die Auflösung kommt erst am Ende.","Prüfung starten","exam")+
+        mode("📝","PRÜFUNGSMODUS","10 fair durchgemischte Fragen aus "+mod+". Die Auflösung kommt erst am Ende.","Prüfung starten","exam")+
         mode("🎯","LERNMODUS","Zufällige "+mod+"-Fragen mit sofortiger Rückmeldung und Sitzungsstatistik.","Lernen starten","learn")+
         mode("↻","FEHLER LERNEN",ec?ec+" gespeicherte "+mod+"-Fehlerfrage(n). Zweimal hintereinander richtig = gemeistert.":"Aktuell sind in "+mod+" keine Fehlerfragen gespeichert.","Fehler lernen","errors")+
         mode("▥","PRÜFUNGSVERLAUF / STATISTIK","Ergebnisse getrennt nach M50 und M53 sowie Gesamtübersicht.","Verlauf öffnen","history")+
@@ -685,12 +733,10 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   }
 
   function startExam(){
-    var module=state.module,src=shuffle(questions(module)),items=[],seen={},i,q;
-    for(i=0;i<src.length&&items.length<8;i++){
-      q=src[i];
-      if(seen[q.question])continue;
-      seen[q.question]=true;
-      items.push({id:q.id,choices:choices(q),selected:-1});
+    var module=state.module,ids=takeFairExamIds(module,EXAM_SIZE),items=[],i,q;
+    for(i=0;i<ids.length;i++){
+      q=qById(ids[i],module);
+      if(q)items.push({id:q.id,choices:choices(q),selected:-1,draftSelected:-1});
     }
     state.exam={module:module,items:items,index:0,result:null};
     renderExam();
@@ -699,38 +745,46 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
     show("exam");
     var ex=state.exam;
     if(!ex||!ex.items.length){startExam();return;}
-    var item=ex.items[ex.index],q=qById(item.id,ex.module),pos=ex.index+1,ans="",i;
+    var item=ex.items[ex.index],q=qById(item.id,ex.module),pos=ex.index+1,ans="",i,current;
+    current=item.draftSelected>=0?item.draftSelected:item.selected;
     for(i=0;i<item.choices.length;i++){
-      ans+='<button class="answer'+(item.selected===i?' selected':'')+'" data-exam-answer="'+i+'">'+block(item.choices[i])+'</button>';
+      ans+='<button class="answer'+(current===i?' selected':'')+'" data-exam-answer="'+i+'">'+block(item.choices[i])+'</button>';
     }
     app.innerHTML=
-      '<section class="panel"><div class="q-head"><div><div class="q-count">'+ex.module+' · Frage '+pos+' von 8</div></div><div class="q-id">Original Nr. '+q.id+'</div></div>'+
-      '<div class="progress"><div style="width:'+(pos/8*100)+'%"></div></div>'+
+      '<section class="panel"><div class="q-head"><div><div class="q-count">'+ex.module+' · Frage '+pos+' von '+EXAM_SIZE+'</div></div><div class="q-id">Original Nr. '+q.id+'</div></div>'+
+      '<div class="progress"><div style="width:'+(pos/EXAM_SIZE*100)+'%"></div></div>'+
       '<div class="question">'+esc(q.question)+'</div><div class="answers">'+ans+'</div>'+
-      '<div class="actions"><button class="btn" id="examNext" '+(item.selected<0?'disabled':'')+'>'+(pos===8?'Prüfung auswerten':'Weiter')+'</button></div>'+
-      '<p class="muted" style="margin-top:14px;font-size:.88rem">Im Prüfungsmodus wird erst nach allen 8 Fragen aufgelöst.</p></section>';
+      '<div class="actions">'+
+        (pos>1?'<button class="btn secondary" id="examPrev">Zurück</button>':'')+
+        '<button class="btn" id="examNext" '+(current<0?'disabled':'')+'>'+(pos===EXAM_SIZE?'Prüfung auswerten':'Weiter')+'</button></div>'+
+      '<p class="muted" style="margin-top:14px;font-size:.88rem">Du kannst deine Auswahl ändern, bis du auf „Weiter“ tippst. Mit „Zurück“ kannst du vorherige Fragen nochmals ansehen und ändern. Die Auswertung erfolgt erst am Ende.</p></section>';
     var buttons=document.querySelectorAll("[data-exam-answer]");
     for(i=0;i<buttons.length;i++)buttons[i].onclick=function(){
-      if(item.selected>=0)return;
-      item.selected=Number(this.getAttribute("data-exam-answer"));
+      item.draftSelected=Number(this.getAttribute("data-exam-answer"));
       renderExam();
     };
+    if(pos>1)document.getElementById("examPrev").onclick=function(){
+      ex.index--;renderExam();
+    };
     document.getElementById("examNext").onclick=function(){
-      if(item.selected<0)return;
-      if(ex.index<7){ex.index++;renderExam();}else finishExam();
+      var chosen=item.draftSelected>=0?item.draftSelected:item.selected;
+      if(chosen<0)return;
+      item.selected=chosen;
+      item.draftSelected=chosen;
+      if(ex.index<EXAM_SIZE-1){ex.index++;renderExam();}else finishExam();
     };
   }
   function finishExam(){
-    var ex=state.exam,reviewed=[],right=0,i,item,q,chosen,ok,module=ex.module;
+    var ex=state.exam,reviewed=[],right=0,i,item,q,chosen,ok,module=ex.module,total=ex.items.length;
     for(i=0;i<ex.items.length;i++){
       item=ex.items[i];q=qById(item.id,module);chosen=item.choices[item.selected];ok=chosen===q.correct;
       if(ok)right++;else addError(q.id,module);
       reviewed.push({id:q.id,question:q.question,chosen:chosen,correct:q.correct,ok:ok});
     }
-    var percent=right/8*100,h=history(module);
-    h.push({date:new Date().toISOString(),right:right,total:8,percent:percent});
+    var percent=total?right/total*100:0,h=history(module);
+    h.push({date:new Date().toISOString(),right:right,total:total,percent:percent});
     profileSet(keys(module).history,h);
-    ex.result={reviewed:reviewed,right:right,wrong:8-right,percent:percent};
+    ex.result={reviewed:reviewed,right:right,wrong:total-right,percent:percent,total:total};
     renderResult();
   }
   function renderResult(){
@@ -747,7 +801,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
         '<div class="row"><div class="row-k">Bewertung</div><div class="row-v">'+(x.ok?'Richtig':'Falsch')+'</div></div></article>';
     }
     app.innerHTML='<section class="panel"><div class="result"><div class="kicker">'+ex.module+' · Prüfung abgeschlossen</div>'+
-      '<div class="big">'+r.right+' / 8</div><h2>'+pct(r.percent)+'</h2><p class="muted">'+r.right+' richtig · '+r.wrong+' falsch</p></div>'+
+      '<div class="big">'+r.right+' / '+(r.total||EXAM_SIZE)+'</div><h2>'+pct(r.percent)+'</h2><p class="muted">'+r.right+' richtig · '+r.wrong+' falsch</p></div>'+
       '<div class="review-list">'+list+'</div><div class="actions">'+
       '<button class="btn secondary" id="resHome">Zur Startseite</button>'+
       '<button class="btn secondary" id="resErrors">Fehler lernen</button>'+
@@ -758,14 +812,13 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
   }
 
   function startLearn(){
-    state.learn={module:state.module,right:0,wrong:0,current:null,lastQuestion:null,choices:[],answered:false,selected:-1};
+    state.learn={module:state.module,right:0,wrong:0,current:null,choices:[],answered:false,selected:-1};
     nextLearn();
   }
   function nextLearn(){
-    var l=state.learn,pool=[],qs=questions(l.module),i,q;
-    for(i=0;i<qs.length;i++)if(!l.lastQuestion||qs[i].question!==l.lastQuestion)pool.push(qs[i]);
-    q=pool[Math.floor(Math.random()*pool.length)];
-    l.current=q.id;l.lastQuestion=q.question;l.choices=choices(q);l.answered=false;l.selected=-1;
+    var l=state.learn,id=takeFairLearnId(l.module),q=qById(id,l.module);
+    if(!q){profileSet(queueKey(l.module,"learn"),[]);id=takeFairLearnId(l.module);q=qById(id,l.module);}
+    l.current=q.id;l.choices=choices(q);l.answered=false;l.selected=-1;
     renderLearn();
   }
   function renderLearn(){
@@ -783,7 +836,7 @@ h2{font-size:clamp(1.5rem,5vw,2.05rem);letter-spacing:-.035em;margin-bottom:9px}
       ans+='<button class="answer'+cls+'" data-learn-answer="'+i+'" '+(l.answered?'disabled':'')+'>'+block(l.choices[i])+'</button>';
     }
     ok=l.answered&&l.choices[l.selected]===q.correct;
-    app.innerHTML='<div class="q-head"><div><div class="kicker">'+l.module+' · Lernmodus</div><h2>Zufällige Frage</h2></div><div class="q-id">Original Nr. '+q.id+'</div></div>'+
+    app.innerHTML='<div class="q-head"><div><div class="kicker">'+l.module+' · Lernmodus</div><h2>Durchgemischte Frage</h2></div><div class="q-id">Original Nr. '+q.id+'</div></div>'+
       '<div class="pills"><div class="pill">Richtig: <b>'+l.right+'</b></div><div class="pill">Falsch: <b>'+l.wrong+'</b></div><div class="pill">Trefferquote: <b>'+pct(rate)+'</b></div></div>'+
       '<section class="panel"><div class="question">'+esc(q.question)+'</div><div class="answers">'+ans+'</div>'+
       (l.answered?'<div class="feedback '+(ok?'ok':'bad')+'">'+(ok?'Richtig ✅':'Falsch ❌')+'</div>':'')+
