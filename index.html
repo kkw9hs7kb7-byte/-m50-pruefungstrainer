@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="LBA Trainer">
 <meta name="format-detection" content="telephone=no">
 <title>LBA Prüfungstrainer</title>
+<meta name="app-version" content="2026-10-06-12fragen">
 <style>
 :root{
   --bg:#0b1118;--bg2:#101923;--card:#15202b;--card2:#1c2936;--line:#2a3a4b;
@@ -134,7 +135,6 @@ h3{font-size:1.08rem;line-height:1.38}
       <button class="nav-btn" data-go="home">Start</button>
       <button class="nav-btn" data-go="modules">Prüfungen</button>
       <button class="nav-btn" data-go="learn">Alle lernen</button>
-      <button class="nav-btn" data-go="random">Zufallsprüfung</button>
       <button class="nav-btn" data-go="errors">Fehler</button>
       <button class="nav-btn" data-go="history">Verlauf</button>
     </nav>
@@ -198,7 +198,7 @@ function setNav(v){
   for(var i=0;i<bs.length;i++){
     var t=bs[i].getAttribute("data-go"),on=(t===v);
     if(v==="exam"||v==="result"){
-      on=!!(state.exam&&((state.exam.kind==="random"&&t==="random")||(state.exam.kind==="module"&&t==="modules")));
+      on=!!(state.exam&&state.exam.kind==="module"&&t==="modules");
     }
     if(on)bs[i].classList.add("active");else bs[i].classList.remove("active");
   }
@@ -208,7 +208,7 @@ function bindNav(){
   var bs=document.querySelectorAll("[data-go]");
   for(var i=0;i<bs.length;i++)bs[i].onclick=function(){
     var v=this.getAttribute("data-go");
-    if(v==="home")renderHome();else if(v==="modules")renderModules();else if(v==="learn")startLearn(null);else if(v==="random")startRandomExam();else if(v==="errors")startErrors();else renderHistory();
+    if(v==="home")renderHome();else if(v==="modules")renderModules();else if(v==="learn")startLearn(null);else if(v==="errors")startErrors();else renderHistory();
   }
 }
 function qTags(q){
@@ -221,7 +221,7 @@ function bindActionCards(){
   var bs=document.querySelectorAll("[data-action]");
   for(var i=0;i<bs.length;i++)bs[i].onclick=function(){
     var a=this.getAttribute("data-action");
-    if(a==="modules")renderModules();else if(a==="learn")startLearn(null);else if(a==="random")startRandomExam();else if(a==="errors")startErrors();else renderHistory();
+    if(a==="modules")renderModules();else if(a==="learn")startLearn(null);else if(a==="errors")startErrors();else renderHistory();
   }
 }
 
@@ -238,9 +238,8 @@ function renderHome(){
     '<div class="stat"><div class="stat-l">Bestes Ergebnis</div><div class="stat-v">'+pct(s.best)+'</div></div>'+
     '<div class="stat"><div class="stat-l">Fehlerfragen</div><div class="stat-v">'+ec+'</div></div></section>'+
     '<section class="mode-grid grid">'+
-    mode("📚","Original-Fragensätze","Jeden Fragensatz einzeln lernen oder vollständig in Originalreihenfolge simulieren.","Fragensätze auswählen","modules")+
+    mode("📚","Original-Fragensätze","Jeden Fragensatz einzeln lernen oder eine Prüfung mit 12 zufälligen Fragen daraus simulieren.","Fragensätze auswählen","modules")+
     mode("🎯","Alle Fragen lernen","Zufällig aus dem bereinigten Gesamtpool lernen, mit sofortiger Rückmeldung.","Alle lernen","learn")+
-    mode("📝","Zufallsprüfung","8 zufällige Fragen aus dem Gesamtpool. Auflösung erst am Ende.","Prüfung starten","random")+
     mode("↻","Fehler lernen",ec?ec+" aktive Fehlerfrage(n). Zweimal hintereinander richtig = gemeistert.":"Aktuell sind keine Fehlerfragen gespeichert.","Fehler bearbeiten","errors")+
     '</section>'+
     '<section class="panel" style="margin-top:14px"><h3>Quellenhinweise</h3><ul class="source-list">'+
@@ -262,7 +261,7 @@ function renderModules(){
       notes+'<div class="btn-row"><button class="btn secondary" data-learn-module="'+m.id+'">Lernen</button><button class="btn" data-exam-module="'+m.id+'">Prüfung simulieren</button></div></article>';
   }
   app.innerHTML='<section class="hero"><div class="kicker">Originalquellen</div><h1>Fragensätze auswählen</h1>'+
-    '<p class="muted">„Prüfung simulieren“ verwendet den vollständigen jeweiligen Fragensatz in seiner ursprünglichen Nummernfolge. Die Antwortreihenfolge wird gemischt.</p></section>'+
+    '<p class="muted">„Prüfung simulieren“ wählt bei jedem Start 12 zufällige Fragen aus dem jeweiligen Fragensatz. Die Antwortreihenfolge wird ebenfalls gemischt.</p></section>'+
     '<section class="module-list">'+cards+'</section>';
   var lb=document.querySelectorAll("[data-learn-module]"),eb=document.querySelectorAll("[data-exam-module]");
   for(var k=0;k<lb.length;k++)lb[k].onclick=function(){startLearn(this.getAttribute("data-learn-module"))};
@@ -311,15 +310,20 @@ function renderLearn(){
   }else document.getElementById("learnNext").onclick=nextLearn;
 }
 
-function sampleRandom(n){
-  var src=shuffle(dedupPool()),out=[],seen={};
-  for(var i=0;i<src.length&&out.length<n;i++){var q=src[i];if(seen[q.question])continue;seen[q.question]=1;out.push(q)}
+function sampleModuleQuestions(moduleQuestions,n){
+  var src=shuffle(moduleQuestions),out=[],seen={};
+  for(var i=0;i<src.length&&out.length<n;i++){
+    var q=src[i];
+    if(seen[q.question])continue;
+    seen[q.question]=1;
+    out.push(q);
+  }
   return out;
 }
-function startRandomExam(){startExamFromPool(sampleRandom(8),"Zufallsprüfung · 8 Fragen","random")}
 function startModuleExam(mid){
   var m=moduleById(mid);if(!m)return;
-  startExamFromPool(m.questions.slice(),m.title,"module");
+  var selected=sampleModuleQuestions(m.questions,12);
+  startExamFromPool(selected,m.title+" · 12 Fragen","module");
 }
 function startExamFromPool(pool,title,kind){
   var items=[];
@@ -371,8 +375,8 @@ function renderResult(){
     '<div class="review-list">'+list+'</div><div class="actions"><button class="btn secondary" id="resHome">Startseite</button><button class="btn secondary" id="resErrors">Fehler lernen</button><button class="btn" id="resAgain">Noch einmal</button></div></section>';
   document.getElementById("resHome").onclick=renderHome;document.getElementById("resErrors").onclick=startErrors;
   document.getElementById("resAgain").onclick=function(){
-    if(ex.kind==="random")startRandomExam();
-    else{var first=QMAP[ex.items[0].uid];startModuleExam(first.moduleId)}
+    var first=QMAP[ex.items[0].uid];
+    if(first)startModuleExam(first.moduleId);
   };
 }
 
@@ -427,9 +431,9 @@ function renderHistory(){
     '<div class="stat"><div class="stat-l">Durchschnitt</div><div class="stat-v">'+pct(s.avg)+'</div></div></section>'+
     '<section class="panel"><h2>Vollständiger Prüfungsverlauf</h2>'+
     (h.length?'<div class="history">'+items+'</div><div class="actions"><button class="btn danger" id="clearHist">Prüfungsverlauf löschen</button></div>':
-    '<div class="empty"><div class="empty-icon">📝</div><h3>Noch keine Prüfung abgeschlossen.</h3><button class="btn" id="firstExam">Zufallsprüfung starten</button></div>')+'</section>';
+    '<div class="empty"><div class="empty-icon">📝</div><h3>Noch keine Prüfung abgeschlossen.</h3><button class="btn" id="firstExam">Prüfung auswählen</button></div>')+'</section>';
   if(h.length)document.getElementById("clearHist").onclick=function(){if(confirm("Möchtest du wirklich alle gespeicherten Prüfungsergebnisse löschen?")){storeSet(KEYS.history,[]);renderHistory()}};
-  else document.getElementById("firstExam").onclick=startRandomExam;
+  else document.getElementById("firstExam").onclick=renderModules;
 }
 
 function migrateOldM50Data(){
